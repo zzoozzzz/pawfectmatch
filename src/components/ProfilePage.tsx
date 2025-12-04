@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -11,8 +11,9 @@ import { EditProfileDialog } from "./EditProfileDialog";
 import { PetFormDialog } from "./PetFormDialog";
 import { HelperDetailsDialog } from "./HelperDetailsDialog";
 import { ApplicantsDialog } from "./ApplicantsDialog";
-import { toast } from "sonner@2.0.3";
-
+import { toast } from "sonner";
+import { api } from "../lib/api";
+import { useUser } from "../hooks/useUser";
 import { Users } from "lucide-react";
 import { User } from "lucide-react";
 
@@ -22,15 +23,50 @@ interface ProfilePageProps {
 }
 
 interface Pet {
-  id?: number;
+  _id: string;
   name: string;
   type: string;
-  breed: string;
-  age: string;
-  height: string;
-  weight: string;
-  temperament: string;
-  image: string;
+  breed?: string;
+  height?: number;
+  weight?: number;
+  temperament?: string;
+  photos?: string[];
+  owner: string;
+}
+
+interface Task {
+  _id: string;
+  title: string;
+  description: string;
+  type: string;
+  location: string;
+  status: string;
+  reward?: string;
+  budget?: number;
+  date?: string;
+  time?: string;
+  image?: string;
+  pet?: {
+    _id: string;
+    name: string;
+    type: string;
+    photos?: string[];
+  };
+  postedBy?: {
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  };
+  assignedTo?: {
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  };
+  applicants?: Array<{
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  }>;
 }
 
 interface ProfileData {
@@ -47,37 +83,33 @@ interface HelperDetails {
 }
 
 export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps) {
-  // Profile data
-  const [profileData, setProfileData] = useState<ProfileData>({
-    username: "John Doe",
-    bio: userType === 'owner' 
-      ? "Proud owner of a wonderful Golden Retriever. Looking for reliable helpers in my local community."
-      : "Pet lover with 5+ years of experience caring for dogs and cats. I'm passionate about animals and committed to providing excellent care. Available for walking, feeding, and boarding services.",
-    location: "New York, NY",
-    profilePhoto: "",
+  const { user, loading: userLoading } = useUser();
+  const [loading, setLoading] = useState(true);
+  const [loadingPets, setLoadingPets] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pets' | 'tasks' | 'reviews'>('tasks');
+
+  // Profile data from real user (computed for EditProfileDialog compatibility)
+  const getProfileData = (): ProfileData => ({
+    username: user?.name || "",
+    bio: user?.bio || "",
+    location: "", // Location not in user model yet
+    profilePhoto: user?.profilePhoto || "",
   });
 
-  // Helper-specific data
+  // Helper-specific data (stored in user bio for now)
   const [helperDetails, setHelperDetails] = useState<HelperDetails>({
-    experience: "5+ years of professional pet care experience. I've worked with various breeds and temperaments, from energetic puppies to senior pets needing special care.",
-    certifications: ["Pet First Aid Certified", "Professional Dog Walker Certification"],
-    specialties: ["Dog Walking", "Cat Sitting", "Pet Boarding", "Senior Pet Care"],
+    experience: "",
+    certifications: [],
+    specialties: [],
   });
 
   // Pets data (for owners)
-  const [myPets, setMyPets] = useState<Pet[]>([
-    {
-      id: 1,
-      name: "Max",
-      type: "dog",
-      breed: "Golden Retriever",
-      age: "3 years",
-      height: "24 inches",
-      weight: "65 lbs",
-      temperament: "Friendly, energetic, loves playing fetch and meeting new people. Well-trained and great with children.",
-      image: "https://images.unsplash.com/photo-1633722715463-d30f4f325e24?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnb2xkZW4lMjByZXRyaWV2ZXJ8ZW58MXx8fHwxNzYwMjk2MjI1fDA&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-  ]);
+  const [myPets, setMyPets] = useState<Pet[]>([]);
+  
+  // Tasks data
+  const [postedTasks, setPostedTasks] = useState<Task[]>([]);
+  const [assignedTasks, setAssignedTasks] = useState<Task[]>([]);
 
   // Dialogs state
   const [editProfileOpen, setEditProfileOpen] = useState(false);
@@ -85,181 +117,135 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
   const [helperDetailsOpen, setHelperDetailsOpen] = useState(false);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
   const [applicantsDialogOpen, setApplicantsDialogOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<typeof ownerTasks[0] | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  // Mock applicants data
-  const mockApplicants = [
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      avatar: "",
-      rating: 4.9,
-      reviewCount: 24,
-      location: "New York, NY",
-      tasksCompleted: 38,
-      responseRate: 98,
-      verified: true,
-      experience: "3+ years",
-      certifications: ["Pet First Aid Certified", "Professional Dog Walker"],
-      introduction: "I'm a passionate pet lover with over 3 years of experience caring for dogs of all sizes and breeds. I treat every pet as if they were my own and always ensure they get plenty of exercise, love, and attention."
-    },
-    {
-      id: 2,
-      name: "Mike Chen",
-      avatar: "",
-      rating: 4.8,
-      reviewCount: 19,
-      location: "Brooklyn, NY",
-      tasksCompleted: 27,
-      responseRate: 95,
-      verified: true,
-      experience: "2+ years",
-      certifications: ["Pet Care Professional"],
-      introduction: "Former veterinary assistant with a deep understanding of pet behavior and needs. I'm reliable, punctual, and committed to providing the best care for your furry friends."
-    },
-    {
-      id: 3,
-      name: "Emily Rodriguez",
-      avatar: "",
-      rating: 5.0,
-      reviewCount: 31,
-      location: "Manhattan, NY",
-      tasksCompleted: 45,
-      responseRate: 100,
-      verified: true,
-      experience: "5+ years",
-      certifications: ["Pet First Aid Certified", "Professional Dog Walker", "Cat Behavior Specialist"],
-      introduction: "Professional pet care specialist with extensive experience in both dogs and cats. I have a flexible schedule and am available for walks, feeding, and overnight stays. References available upon request."
-    },
-    {
-      id: 4,
-      name: "David Park",
-      avatar: "",
-      rating: 4.7,
-      reviewCount: 15,
-      location: "Queens, NY",
-      tasksCompleted: 22,
-      responseRate: 92,
-      verified: false,
-      experience: "1+ year",
-      certifications: [],
-      introduction: "Animal enthusiast and dog owner myself. I understand how important it is to find someone trustworthy to care for your pets. I'm friendly, responsible, and love spending time with animals."
-    },
-    {
-      id: 5,
-      name: "Jessica Williams",
-      avatar: "",
-      rating: 4.9,
-      reviewCount: 28,
-      location: "Brooklyn, NY",
-      tasksCompleted: 41,
-      responseRate: 97,
-      verified: true,
-      experience: "4+ years",
-      certifications: ["Pet First Aid Certified", "Pet CPR Certified"],
-      introduction: "Experienced pet sitter specializing in senior pets and those with special needs. I'm patient, caring, and have a calm demeanor that helps anxious pets feel comfortable and safe."
+  // Load user data on mount
+  useEffect(() => {
+    // Wait for user loading to complete
+    if (userLoading) return;
+    
+    // Check if user exists before loading data
+    if (!user) {
+      setLoading(false);
+      return;
     }
-  ];
+    
+    if (!user._id) {
+      setLoading(false);
+      return;
+    }
 
-  // Tasks data - different for owners and helpers
-  const ownerTasks = [
-    {
-      id: 1,
-      title: "Daily Dog Walking",
-      type: "Posted",
-      status: "Active",
-      applications: 5,
-      image: "https://images.unsplash.com/photo-1754318245375-5fe3699a286c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxoYXBweSUyMGRvZyUyMG91dGRvb3JzfGVufDF8fHx8MTc2MDM5MzEzMnww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-    {
-      id: 2,
-      title: "Weekend Cat Sitting",
-      type: "Posted",
-      status: "Active",
-      applications: 3,
-      image: "https://images.unsplash.com/photo-1574144113084-b6f450cc5e0c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMGNvcmdpfGVufDF8fHx8MTc2MDM5MzEzNHww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-    {
-      id: 3,
-      title: "Morning Pet Feeding",
-      type: "Posted",
-      status: "Completed",
-      applications: 0,
-      image: "https://images.unsplash.com/photo-1754318245375-5fe3699a286c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxoYXBweSUyMGRvZyUyMG91dGRvb3JzfGVufDF8fHx8MTc2MDM5MzEzMnww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-  ];
+    // Load initial data based on default tab (tasks)
+    const initializeData = async () => {
+      // Load tasks by default since activeTab starts as 'tasks'
+      await loadTasks();
+      setLoading(false);
+    };
 
-  const helperTasks = [
-    {
-      id: 1,
-      title: "Weekend Pet Sitting",
-      type: "Applied",
-      status: "Confirmed",
-      date: "Nov 15-17",
-      owner: "Sarah Johnson",
-      image: "https://images.unsplash.com/photo-1574144113084-b6f450cc5e0c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMGNvcmdpfGVufDF8fHx8MTc2MDM5MzEzNHww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-    {
-      id: 2,
-      title: "Daily Dog Walking",
-      type: "Applied",
-      status: "Pending",
-      date: "Nov 12-30",
-      owner: "Mike Chen",
-      image: "https://images.unsplash.com/photo-1754318245375-5fe3699a286c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxoYXBweSUyMGRvZyUyMG91dGRvb3JzfGVufDF8fHx8MTc2MDM5MzEzMnww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-    {
-      id: 3,
-      title: "Cat Feeding Service",
-      type: "Applied",
-      status: "Completed",
-      date: "Nov 1-5",
-      owner: "Emily Rodriguez",
-      image: "https://images.unsplash.com/photo-1574144113084-b6f450cc5e0c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMGNvcmdpfGVufDF8fHx8MTc2MDM5MzEzNHww&ixlib=rb-4.1.0&q=80&w=1080",
-    },
-  ];
+    initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLoading, user]);
 
-  const myTasks = userType === 'owner' ? ownerTasks : helperTasks;
+  // Load data when tab changes
+  useEffect(() => {
+    // Wait for user loading to complete
+    if (userLoading || loading) return;
+    
+    // Check if user exists before loading data
+    if (!user || !user._id) return;
 
-  const reviews = [
-    {
-      id: 1,
-      author: "Emily R.",
-      rating: 5,
-      date: "Oct 10, 2025",
-      comment: "Excellent care! Very reliable and Max loved spending time with them.",
-    },
-    {
-      id: 2,
-      author: "John D.",
-      rating: 5,
-      date: "Oct 5, 2025",
-      comment: "Great communication and punctual. Would definitely recommend!",
-    },
-    {
-      id: 3,
-      author: "Sarah M.",
-      rating: 4,
-      date: "Sep 28, 2025",
-      comment: "Very caring with pets. Did a wonderful job!",
-    },
-  ];
+    if (activeTab === 'pets' && userType === 'owner') {
+      // Load pets when pets tab is activated (only if not already loaded)
+      if (myPets.length === 0 && !loadingPets) {
+        loadPets();
+      }
+    } else if (activeTab === 'tasks') {
+      // Load tasks when tasks tab is activated (only if not already loaded)
+      if (myTasks.length === 0 && !loadingTasks) {
+        loadTasks();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, userLoading, user, loading]);
 
-  const handleSaveProfile = (data: ProfileData) => {
-    setProfileData(data);
+  const loadPets = async () => {
+    if (userType !== 'owner' || !user || !user._id) return;
+    
+    setLoadingPets(true);
+    try {
+      const response = await api.get<Pet[]>('/pets/my');
+      if (response.success && response.data) {
+        setMyPets(Array.isArray(response.data) ? response.data : []);
+      } else {
+        toast.error(response.message || "Failed to load pets");
+      }
+    } catch (error) {
+      console.error('Failed to load pets:', error);
+      toast.error("Failed to load pets. Please try again.");
+    } finally {
+      setLoadingPets(false);
+    }
   };
 
-  const handleSavePet = (pet: Pet) => {
-    if (pet.id) {
-      // Update existing pet
-      setMyPets(myPets.map(p => p.id === pet.id ? pet : p));
-    } else {
-      // Add new pet
-      setMyPets([...myPets, { ...pet, id: Date.now() }]);
+  const loadTasks = async () => {
+    if (!user || !user._id) return;
+    
+    setLoadingTasks(true);
+    try {
+      const response = await api.get<Task[]>('/tasks');
+      if (response.success && response.data) {
+        const allTasks = Array.isArray(response.data) ? response.data : [];
+        
+        // Filter tasks posted by this user (for owners)
+        const posted = allTasks.filter(task => 
+          task.postedBy?._id === user._id
+        );
+        setPostedTasks(posted);
+        
+        // Filter tasks assigned to this user (for helpers)
+        const assigned = allTasks.filter(task => 
+          task.assignedTo?._id === user._id || 
+          task.applicants?.some(applicant => applicant._id === user._id)
+        );
+        setAssignedTasks(assigned);
+      } else {
+        toast.error(response.message || "Failed to load tasks");
+      }
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+      toast.error("Failed to load tasks. Please try again.");
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  // Determine which tasks to show based on user type
+  const myTasks = userType === 'owner' ? postedTasks : assignedTasks;
+
+  const handleSaveProfile = async (data: ProfileData) => {
+    // TODO: Implement API call to update user profile
+    // For now, this would need to call PUT /api/users/:id or similar
+    toast.info("Profile update feature will be implemented with backend API");
+  };
+
+  const handleSavePet = async (savedPet: Pet) => {
+    // PetFormDialog now returns the created/updated pet object from backend
+    // Toast notifications are handled in PetFormDialog
+    if (savedPet._id) {
+      // Check if pet already exists (update) or is new (create)
+      const existingIndex = myPets.findIndex(p => p._id === savedPet._id);
+      if (existingIndex >= 0) {
+        // Update existing pet in state
+        setMyPets(prev => prev.map((p, idx) => idx === existingIndex ? savedPet : p));
+      } else {
+        // Add new pet to state - add to beginning of array
+        setMyPets(prev => [savedPet, ...prev]);
+      }
     }
   };
 
   const handleEditPet = (pet: Pet) => {
+    // PetFormDialog now accepts backend Pet format directly
     setEditingPet(pet);
     setPetFormOpen(true);
   };
@@ -273,41 +259,76 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
     setHelperDetails(data);
   };
 
-  const handleViewApplicants = (task: typeof ownerTasks[0]) => {
+  const handleViewApplicants = (task: Task) => {
     setSelectedTask(task);
     setApplicantsDialogOpen(true);
   };
 
-  const handleViewApplicantProfile = (applicantId: number) => {
+  const handleViewApplicantProfile = (applicantId: string | number) => {
     // Navigate to helper profile
-    toast("Opening applicant profile...");
+    toast.info("Opening applicant profile...");
   };
 
-  const handleConfirmHelper = (applicantId: number) => {
-    const applicant = mockApplicants.find(a => a.id === applicantId);
-    if (applicant) {
-      toast(`✅ ${applicant.name} has been selected as your helper!`, {
-        description: "They will be notified about your selection."
+  const handleConfirmHelper = async (applicantId: string | number) => {
+    if (!selectedTask) return;
+    
+    try {
+      const response = await api.post(`/tasks/${selectedTask._id}/assign`, {
+        helperId: applicantId,
       });
+      
+      if (response.success) {
+        toast.success("Helper assigned successfully!");
+        await loadTasks(); // Reload tasks
+        setApplicantsDialogOpen(false);
+      } else {
+        toast.error(response.message || "Failed to assign helper");
+      }
+    } catch (error) {
+      toast.error("Failed to assign helper");
     }
   };
 
   // Get applicants for the selected task
   const getApplicantsForTask = () => {
-    if (!selectedTask) return [];
+    if (!selectedTask || !selectedTask.applicants) return [];
     
-    // Return different applicants based on task id
-    if (selectedTask.id === 1) {
-      // Daily Dog Walking - 5 applicants
-      return mockApplicants;
-    } else if (selectedTask.id === 2) {
-      // Weekend Cat Sitting - 3 applicants  
-      return mockApplicants.slice(0, 3);
-    } else {
-      // Completed task - 0 applicants
-      return [];
-    }
+    return selectedTask.applicants.map((app: { _id: string; name: string; profilePhoto?: string }) => ({
+      id: app._id,
+      name: app.name,
+      avatar: app.profilePhoto || '',
+      rating: 4.8, // Default rating (not in backend yet)
+      reviewCount: 0,
+      location: '',
+      tasksCompleted: 0,
+      responseRate: 100,
+      verified: false,
+      experience: '',
+      certifications: [],
+      introduction: '',
+    }));
   };
+
+  if (userLoading || loading) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground">Loading profile...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground mb-4">Please log in to view your profile</div>
+          <Button onClick={() => onNavigate('auth')}>Log In</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pt-24 pb-24 px-4">
@@ -325,9 +346,9 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
         <Card className="p-8 mb-6 border-0 shadow-lg">
           <div className="flex flex-col md:flex-row gap-6 items-start">
             <Avatar className="w-32 h-32">
-              <AvatarImage src={profileData.profilePhoto} alt={profileData.username} />
+              <AvatarImage src={user?.profilePhoto || ""} alt={user?.name || ""} />
               <AvatarFallback className="bg-primary text-white text-3xl">
-                {profileData.username.substring(0, 2).toUpperCase()}
+                {user?.name?.substring(0, 2).toUpperCase() || "U"}
               </AvatarFallback>
             </Avatar>
 
@@ -335,18 +356,10 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
               <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-primary" style={{ fontWeight: 700, fontSize: '32px' }}>{profileData.username}</h1>
+                    <h1 className="text-primary" style={{ fontWeight: 700, fontSize: '32px' }}>{user?.name || "User"}</h1>
                   </div>
-                  {userType === 'helper' && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                      <span style={{ fontWeight: 600 }}>4.9</span>
-                      <span className="text-muted-foreground">(18 reviews)</span>
-                    </div>
-                  )}
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="w-4 h-4" />
-                    <span>{profileData.location}</span>
+                    <span>{user?.email || ""}</span>
                   </div>
                 </div>
                 <Button 
@@ -360,7 +373,7 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
               </div>
 
               <p className="text-muted-foreground mb-6">
-                {profileData.bio}
+                {user?.bio || "No bio added yet."}
               </p>
 
               {userType === 'helper' ? (
@@ -372,7 +385,9 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <CheckCircle2 className="w-6 h-6 text-primary" />
                       </div>
                       <div>
-                        <div className="text-primary" style={{ fontWeight: 700, fontSize: '24px' }}>24</div>
+                        <div className="text-primary" style={{ fontWeight: 700, fontSize: '24px' }}>
+                          {assignedTasks.filter(t => t.status === 'completed').length}
+                        </div>
                         <div className="text-xs text-muted-foreground">Tasks Done</div>
                       </div>
                     </div>
@@ -383,8 +398,10 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <TrendingUp className="w-6 h-6 text-accent" />
                       </div>
                       <div>
-                        <div className="text-accent" style={{ fontWeight: 700, fontSize: '24px' }}>98%</div>
-                        <div className="text-xs text-muted-foreground">Response</div>
+                        <div className="text-accent" style={{ fontWeight: 700, fontSize: '24px' }}>
+                          {assignedTasks.length > 0 ? Math.round((assignedTasks.filter(t => t.status === 'completed').length / assignedTasks.length) * 100) : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">Completion</div>
                       </div>
                     </div>
                   </Card>
@@ -394,8 +411,10 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <Clock className="w-6 h-6 text-chart-5" />
                       </div>
                       <div>
-                        <div className="text-chart-5" style={{ fontWeight: 700, fontSize: '24px' }}>2yr</div>
-                        <div className="text-xs text-muted-foreground">Member</div>
+                        <div className="text-chart-5" style={{ fontWeight: 700, fontSize: '24px' }}>
+                          {user?.createdAt ? new Date(user.createdAt).getFullYear() : new Date().getFullYear()}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Member Since</div>
                       </div>
                     </div>
                   </Card>
@@ -405,7 +424,7 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <Star className="w-6 h-6 text-yellow-500 fill-yellow-500" />
                       </div>
                       <div>
-                        <div className="text-yellow-600" style={{ fontWeight: 700, fontSize: '24px' }}>4.9</div>
+                        <div className="text-yellow-600" style={{ fontWeight: 700, fontSize: '24px' }}>—</div>
                         <div className="text-xs text-muted-foreground">Rating</div>
                       </div>
                     </div>
@@ -431,7 +450,9 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <Briefcase className="w-6 h-6 text-accent" />
                       </div>
                       <div>
-                        <div className="text-accent" style={{ fontWeight: 700, fontSize: '24px' }}>5</div>
+                        <div className="text-accent" style={{ fontWeight: 700, fontSize: '24px' }}>
+                          {postedTasks.filter(t => t.status === 'open' || t.status === 'in_progress').length}
+                        </div>
                         <div className="text-xs text-muted-foreground">Active Tasks</div>
                       </div>
                     </div>
@@ -442,8 +463,10 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                         <Clock className="w-6 h-6 text-chart-5" />
                       </div>
                       <div>
-                        <div className="text-chart-5" style={{ fontWeight: 700, fontSize: '24px' }}>1yr</div>
-                        <div className="text-xs text-muted-foreground">Member</div>
+                        <div className="text-chart-5" style={{ fontWeight: 700, fontSize: '24px' }}>
+                          {user?.createdAt ? new Date(user.createdAt).getFullYear() : new Date().getFullYear()}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Member Since</div>
                       </div>
                     </div>
                   </Card>
@@ -500,7 +523,7 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue={userType === 'owner' ? 'pets' : 'tasks'} className="w-full">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'pets' | 'tasks' | 'reviews')} className="w-full">
           <TabsList className={`grid w-full md:w-auto ${userType === 'owner' ? 'grid-cols-2' : 'grid-cols-2'} mb-6`}>
             {userType === 'owner' && <TabsTrigger value="pets">My Pets</TabsTrigger>}
             <TabsTrigger value="tasks">My Tasks</TabsTrigger>
@@ -510,39 +533,59 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
           {/* My Pets Tab (Owner only) */}
           {userType === 'owner' && (
             <TabsContent value="pets">
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myPets.map((pet) => (
-                  <Card key={pet.id} className="overflow-hidden border-0 shadow-md hover:shadow-xl transition-shadow">
-                    <div className="aspect-square relative overflow-hidden">
-                      <ImageWithFallback
-                        src={pet.image}
-                        alt={pet.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="p-5">
-                      <h3 className="mb-1" style={{ fontWeight: 600 }}>{pet.name}</h3>
-                      <p className="text-sm text-muted-foreground mb-1">{pet.breed}</p>
-                      <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
-                        {pet.age && <span>Age: {pet.age}</span>}
-                        {pet.weight && <span>Weight: {pet.weight}</span>}
+              {loadingPets ? (
+                <div className="text-center py-12">
+                  <div className="text-muted-foreground">Loading pets...</div>
+                </div>
+              ) : myPets.length === 0 ? (
+                <EmptyState
+                  icon={PawPrint}
+                  title="No pets yet!"
+                  description="Add your first pet to get started posting tasks."
+                  actionLabel="Add Pet"
+                  onAction={handleAddPet}
+                />
+              ) : (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {myPets.map((pet) => (
+                    <Card key={pet._id} className="overflow-hidden border-0 shadow-md hover:shadow-xl transition-shadow">
+                      <div className="aspect-square relative overflow-hidden">
+                        <ImageWithFallback
+                          src={
+                            pet.photos?.[0] || 
+                            (pet.type === 'dog' 
+                              ? 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1'
+                              : 'https://images.unsplash.com/photo-1574158622682-e40e69881006')
+                          }
+                          alt={pet.name}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
-                      {pet.temperament && (
-                        <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                          {pet.temperament}
+                      <div className="p-5">
+                        <h3 className="mb-1" style={{ fontWeight: 600 }}>{pet.name}</h3>
+                        <p className="text-sm text-muted-foreground mb-1">
+                          {pet.breed || pet.type}
                         </p>
-                      )}
-                      <Button 
-                        variant="outline" 
-                        className="w-full"
-                        onClick={() => handleEditPet(pet)}
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
+                        <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
+                          {pet.height && <span>Height: {pet.height} in</span>}
+                          {pet.weight && <span>Weight: {pet.weight} lbs</span>}
+                        </div>
+                        {pet.temperament && (
+                          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                            {pet.temperament}
+                          </p>
+                        )}
+                        <Button 
+                          variant="outline" 
+                          className="w-full"
+                          onClick={() => handleEditPet(pet)}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
 
                 {/* Add Pet Card */}
                 <Card 
@@ -560,122 +603,116 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
                   </div>
                 </Card>
               </div>
+              )}
             </TabsContent>
           )}
 
           {/* My Tasks Tab */}
           <TabsContent value="tasks">
-            {myTasks.length === 0 ? (
+            {loadingTasks ? (
+              <div className="text-center py-12">
+                <div className="text-muted-foreground">Loading tasks...</div>
+              </div>
+            ) : myTasks.length === 0 ? (
               <EmptyState
                 icon={PawPrint}
                 title="No tasks yet!"
                 description="Start by posting a task or applying to help other pet owners in your community."
-                actionLabel="Browse Tasks"
-                onAction={() => onNavigate('tasks')}
+                actionLabel={userType === 'owner' ? "Post a Task" : "Browse Tasks"}
+                onAction={() => onNavigate(userType === 'owner' ? 'post-task' : 'tasks')}
               />
             ) : (
               <div className="space-y-4">
-                {myTasks.map((task) => (
-                  <Card key={task.id} className="p-6 border-0 shadow-md hover:shadow-xl transition-shadow">
-                    <div className="flex gap-6">
-                      <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0">
-                        <ImageWithFallback
-                          src={task.image}
-                          alt={task.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 style={{ fontWeight: 600 }}>{task.title}</h3>
-                              <Badge 
-                                className={
-                                  task.status === 'Active' || task.status === 'Confirmed'
-                                    ? 'bg-primary text-white' 
-                                    : task.status === 'Pending'
-                                    ? 'bg-accent text-white'
-                                    : 'bg-secondary text-secondary-foreground'
-                                }
-                              >
-                                {task.status}
-                              </Badge>
-                            </div>
-                            {userType === 'owner' ? (
-                              <button 
-                                onClick={() => task.applications > 0 && handleViewApplicants(task)}
-                                className={`text-sm text-muted-foreground flex items-center gap-2 ${
-                                  task.applications > 0 ? 'hover:text-primary cursor-pointer' : 'cursor-default'
-                                }`}
-                              >
-                                <Users className="w-4 h-4" />
-                                {task.applications} application{task.applications !== 1 ? 's' : ''} received
-                              </button>
-                            ) : (
-                              <div className="text-sm text-muted-foreground space-y-1">
-                                <p className="flex items-center gap-2">
-                                  <Calendar className="w-4 h-4" />
-                                  {task.date}
-                                </p>
-                                {'owner' in task && (
-                                  <p className="flex items-center gap-2">
-                                    <User className="w-4 h-4" />
-                                    Owner: {task.owner}
-                                  </p>
-                                )}
+                {myTasks.map((task) => {
+                  const petImage = task.pet?.photos?.[0] || task.image || (
+                    task.pet?.type === 'dog' 
+                      ? 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1'
+                      : 'https://images.unsplash.com/photo-1574158622682-e40e69881006'
+                  );
+                  const applicantsCount = task.applicants?.length || 0;
+                  
+                  return (
+                    <Card key={task._id} className="p-6 border-0 shadow-md hover:shadow-xl transition-shadow">
+                      <div className="flex gap-6">
+                        <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0">
+                          <ImageWithFallback
+                            src={petImage}
+                            alt={task.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 style={{ fontWeight: 600 }}>{task.title}</h3>
+                                <Badge 
+                                  className={
+                                    task.status === 'open' || task.status === 'in_progress'
+                                      ? 'bg-primary text-white' 
+                                      : task.status === 'completed'
+                                      ? 'bg-green-500 text-white'
+                                      : 'bg-secondary text-secondary-foreground'
+                                  }
+                                >
+                                  {task.status.replace('_', ' ')}
+                                </Badge>
                               </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" className="hover:bg-primary/10 hover:border-primary hover:text-primary">
-                              <MessageCircle className="w-4 h-4 mr-2" />
-                              Messages
-                            </Button>
-                            <Button variant="outline" size="sm" className="hover:bg-primary/10 hover:border-primary hover:text-primary">
-                              View
-                            </Button>
+                              {userType === 'owner' ? (
+                                <button 
+                                  onClick={() => applicantsCount > 0 && handleViewApplicants(task)}
+                                  className={`text-sm text-muted-foreground flex items-center gap-2 ${
+                                    applicantsCount > 0 ? 'hover:text-primary cursor-pointer' : 'cursor-default'
+                                  }`}
+                                >
+                                  <Users className="w-4 h-4" />
+                                  {applicantsCount} application{applicantsCount !== 1 ? 's' : ''} received
+                                </button>
+                              ) : (
+                                <div className="text-sm text-muted-foreground space-y-1">
+                                  {task.date && (
+                                    <p className="flex items-center gap-2">
+                                      <Calendar className="w-4 h-4" />
+                                      {new Date(task.date).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                  {task.postedBy && (
+                                    <p className="flex items-center gap-2">
+                                      <User className="w-4 h-4" />
+                                      Owner: {task.postedBy.name}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="hover:bg-primary/10 hover:border-primary hover:text-primary"
+                                onClick={() => onNavigate('task-detail', { taskId: task._id })}
+                              >
+                                View
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
 
-          {/* Reviews Tab (Helper only) */}
+          {/* Reviews Tab (Helper only) - Placeholder for future reviews feature */}
           {userType === 'helper' && (
             <TabsContent value="reviews">
-              <div className="grid md:grid-cols-2 gap-6">
-                {reviews.map((review) => (
-                  <Card key={review.id} className="p-6 border-0 shadow-md">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h4 style={{ fontWeight: 600 }}>{review.author}</h4>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          {review.date}
-                        </div>
-                      </div>
-                      <div className="flex gap-0.5">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`w-4 h-4 ${
-                              i < review.rating
-                                ? 'text-yellow-500 fill-yellow-500'
-                                : 'text-gray-300'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <p className="text-muted-foreground">{review.comment}</p>
-                  </Card>
-                ))}
-              </div>
+              <EmptyState
+                icon={Star}
+                title="No reviews yet!"
+                description="Reviews will appear here once pet owners leave feedback on your completed tasks."
+              />
             </TabsContent>
           )}
         </Tabs>
@@ -685,7 +722,7 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
       <EditProfileDialog
         open={editProfileOpen}
         onOpenChange={setEditProfileOpen}
-        profileData={profileData}
+        profileData={getProfileData()}
         onSave={handleSaveProfile}
       />
 
@@ -710,7 +747,10 @@ export function ProfilePage({ onNavigate, userType = 'owner' }: ProfilePageProps
         open={applicantsDialogOpen}
         onOpenChange={setApplicantsDialogOpen}
         applicants={getApplicantsForTask()}
-        selectedTask={selectedTask}
+        selectedTask={selectedTask ? {
+          title: selectedTask.title,
+          applications: selectedTask.applicants?.length || 0
+        } : null}
         onViewProfile={handleViewApplicantProfile}
         onConfirmHelper={handleConfirmHelper}
       />

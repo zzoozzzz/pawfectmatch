@@ -9,7 +9,7 @@ import { useState } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 
 interface Applicant {
-  id: number;
+  id: number | string;
   name: string;
   avatar: string;
   rating: number;
@@ -29,8 +29,8 @@ interface ApplicantsDialogProps {
   taskTitle?: string;
   applicants: Applicant[];
   selectedTask: { title: string; applications: number } | null;
-  onViewProfile?: (applicantId: number) => void;
-  onConfirmHelper?: (applicantId: number) => void;
+  onViewProfile?: (applicantId: number | string) => void;
+  onConfirmHelper?: (applicantId: number | string) => void;
 }
 
 export function ApplicantsDialog({ 

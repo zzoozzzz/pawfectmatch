@@ -58,3 +58,27 @@ export const verifyToken = async (req, res, next) => {
   }
 };
 
+// Role-based authorization middleware
+export const requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.roles) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized',
+      });
+    }
+
+    // Check if user has at least one of the allowed roles
+    const hasRole = req.user.roles.some(role => allowedRoles.includes(role));
+    
+    if (!hasRole) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Insufficient permissions.',
+      });
+    }
+
+    next();
+  };
+};
+

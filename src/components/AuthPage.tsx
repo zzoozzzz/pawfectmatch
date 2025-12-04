@@ -3,8 +3,10 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Badge } from "./ui/badge";
 import { Heart, User, PawPrint, ArrowLeft } from "lucide-react";
+import { api } from "../lib/api";
+import { useUser } from "../hooks/useUser";
+import { toast } from "sonner";
 
 interface AuthPageProps {
   onNavigate: (page: string, params?: Record<string, any>) => void;
@@ -12,13 +14,96 @@ interface AuthPageProps {
 
 export function AuthPage({ onNavigate }: AuthPageProps) {
   const [isLogin, setIsLogin] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string[]>(['owner']);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+  });
+  const { login } = useUser();
 
   const toggleRole = (role: string) => {
     if (selectedRole.includes(role)) {
-      setSelectedRole(selectedRole.filter(r => r !== role));
+      setSelectedRole(selectedRole.filter((r: string) => r !== role));
     } else {
       setSelectedRole([...selectedRole, role]);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData((prev: { name: string; email: string; password: string }) => ({ ...prev, [field]: value }));
+  };
+
+  const handleLogin = async () => {
+    if (!formData.email || !formData.password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/login', {
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (response.success && response.data) {
+        const { user, token } = response.data;
+        login(user, token);
+        toast.success('Welcome back!');
+        onNavigate('tasks');
+      } else {
+        toast.error(response.message || 'Login failed');
+      }
+    } catch (error) {
+      toast.error('Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!formData.name || !formData.email || !formData.password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (selectedRole.length === 0) {
+      toast.error('Please select at least one role');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/register', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        roles: selectedRole,
+      });
+
+      if (response.success && response.data) {
+        const { user, token } = response.data;
+        login(user, token);
+        toast.success('Account created successfully!');
+        onNavigate('tasks');
+      } else {
+        toast.error(response.message || 'Registration failed');
+      }
+    } catch (error) {
+      toast.error('Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isLogin) {
+      handleLogin();
+    } else {
+      handleRegister();
     }
   };
 
@@ -70,7 +155,7 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
               </p>
             </div>
 
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
@@ -78,6 +163,9 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
                     id="name"
                     placeholder="John Doe"
                     className="bg-background"
+                    value={formData.name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('name', e.target.value)}
+                    required={!isLogin}
                   />
                 </div>
               )}
@@ -89,6 +177,9 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
                   type="email"
                   placeholder="you@example.com"
                   className="bg-background"
+                  value={formData.email}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('email', e.target.value)}
+                  required
                 />
               </div>
 
@@ -99,6 +190,9 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
                   type="password"
                   placeholder="••••••••"
                   className="bg-background"
+                  value={formData.password}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange('password', e.target.value)}
+                  required
                 />
               </div>
 
@@ -146,10 +240,11 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
               )}
 
               <Button 
+                type="submit"
                 className="w-full bg-primary hover:bg-primary/90 text-white"
-                onClick={() => onNavigate('profile')}
+                disabled={loading}
               >
-                {isLogin ? 'Log In' : 'Create Account'}
+                {loading ? 'Loading...' : (isLogin ? 'Log In' : 'Create Account')}
               </Button>
 
               <div className="text-center text-sm">
@@ -164,7 +259,7 @@ export function AuthPage({ onNavigate }: AuthPageProps) {
                   {isLogin ? 'Sign up' : 'Log in'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </Card>
       </div>

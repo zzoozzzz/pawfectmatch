@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import { Button } from "./ui/button";
-import { MessageSquare, User, Heart, Home, ChevronDown, HelpCircle, PawPrint } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { MessageSquare, User, Heart, Home, ChevronDown, HelpCircle, PawPrint, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "./ui/dropdown-menu";
 import { OnboardingModal } from "./OnboardingModal";
+import { useUser } from "../hooks/useUser";
 
 interface NavigationProps {
   currentPage: string;
@@ -16,6 +19,12 @@ interface NavigationProps {
 
 export function Navigation({ currentPage, onNavigate }: NavigationProps) {
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { user, isAuthenticated, logout, isOwner } = useUser();
+  
+  const handleLogout = () => {
+    logout();
+    onNavigate('landing');
+  };
   
   return (
     <>
@@ -91,18 +100,58 @@ export function Navigation({ currentPage, onNavigate }: NavigationProps) {
           >
             <HelpCircle className="w-5 h-5" />
           </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => onNavigate('auth')}
-          >
-            Log In
-          </Button>
-          <Button 
-            onClick={() => onNavigate('post-task')}
-            className="bg-primary hover:bg-primary/90 text-white"
-          >
-            Post a Task
-          </Button>
+          {isAuthenticated ? (
+            <>
+              {isOwner() && (
+                <Button 
+                  onClick={() => onNavigate('post-task')}
+                  className="bg-primary hover:bg-primary/90 text-white"
+                >
+                  Post a Task
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="flex items-center gap-2">
+                    <Avatar className="w-8 h-8">
+                      <AvatarImage src={user?.profilePhoto} alt={user?.name} />
+                      <AvatarFallback className="bg-primary text-white text-sm">
+                        {user?.name?.substring(0, 2).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="hidden lg:inline">{user?.name || 'User'}</span>
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => onNavigate('profile', { userType: isOwner() ? 'owner' : 'helper' })}>
+                    <User className="w-4 h-4 mr-2" />
+                    My Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Log Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <>
+              <Button 
+                variant="ghost" 
+                onClick={() => onNavigate('auth')}
+              >
+                Log In
+              </Button>
+              <Button 
+                onClick={() => onNavigate('post-task')}
+                className="bg-primary hover:bg-primary/90 text-white"
+              >
+                Post a Task
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile bottom navigation */}

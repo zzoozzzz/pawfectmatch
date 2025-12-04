@@ -1,16 +1,210 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Star, MapPin, Clock, DollarSign, Shield, MessageCircle, ArrowLeft, Heart } from "lucide-react";
+import { Star, MapPin, Clock, DollarSign, Shield, MessageCircle, ArrowLeft, Heart, CheckCircle2, Users } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { api } from "../lib/api";
+import { useUser } from "../hooks/useUser";
+import { toast } from "sonner";
+import { ApplicantsDialog } from "./ApplicantsDialog";
 
 interface TaskDetailPageProps {
   onNavigate: (page: string, params?: Record<string, any>) => void;
+  taskId?: string;
 }
 
-export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
+interface Task {
+  _id: string;
+  title: string;
+  description: string;
+  type: string;
+  location: string;
+  time?: string;
+  date?: string;
+  reward?: string;
+  budget?: number;
+  status: string;
+  pet?: {
+    _id: string;
+    name: string;
+    type: string;
+    breed?: string;
+    photos?: string[];
+  };
+  postedBy?: {
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  };
+  assignedTo?: {
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  };
+  applicants?: Array<{
+    _id: string;
+    name: string;
+    profilePhoto?: string;
+  }>;
+}
+
+export function TaskDetailPage({ onNavigate, taskId }: TaskDetailPageProps) {
+  const [task, setTask] = useState<Task | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [applicantsDialogOpen, setApplicantsDialogOpen] = useState(false);
+  const { user, isOwner, isHelper, isAuthenticated } = useUser();
+
+  useEffect(() => {
+    if (taskId) {
+      loadTask();
+    } else {
+      toast.error("Task ID not provided");
+      onNavigate('tasks');
+    }
+  }, [taskId]);
+
+  const loadTask = async () => {
+    if (!taskId) return;
+    
+    setLoading(true);
+    try {
+      const response = await api.get<Task>(`/tasks/${taskId}`);
+      if (response.success && response.data) {
+        setTask(response.data);
+      } else {
+        toast.error("Failed to load task");
+        onNavigate('tasks');
+      }
+    } catch (error) {
+      toast.error("Failed to load task");
+      onNavigate('tasks');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!taskId || !isAuthenticated) {
+      toast.error("Please log in to apply");
+      onNavigate('auth');
+      return;
+    }
+
+    if (!isHelper()) {
+      toast.error("Only helpers can apply to tasks");
+      return;
+    }
+
+    setApplying(true);
+    try {
+      const response = await api.post(`/tasks/${taskId}/apply`, {});
+      if (response.success) {
+        toast.success("Application submitted successfully!");
+        loadTask(); // Reload task to update applicants
+      } else {
+        toast.error(response.message || "Failed to apply");
+      }
+    } catch (error) {
+      toast.error("Failed to apply");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleAssignHelper = async (helperId: string) => {
+    if (!taskId) return;
+
+    setAssigning(true);
+    try {
+      const response = await api.post(`/tasks/${taskId}/assign`, { helperId });
+      if (response.success) {
+        toast.success("Helper assigned successfully!");
+        loadTask(); // Reload task to update status
+        setApplicantsDialogOpen(false);
+      } else {
+        toast.error(response.message || "Failed to assign helper");
+      }
+    } catch (error) {
+      toast.error("Failed to assign helper");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleCompleteTask = async () => {
+    if (!taskId) return;
+
+    setCompleting(true);
+    try {
+      const response = await api.post(`/tasks/${taskId}/complete`, {});
+      if (response.success) {
+        toast.success("Task marked as completed!");
+        loadTask(); // Reload task to update status
+      } else {
+        toast.error(response.message || "Failed to complete task");
+      }
+    } catch (error) {
+      toast.error("Failed to complete task");
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const isTaskOwner = task && user && task.postedBy?._id === user._id;
+  const hasApplied = task?.applicants?.some(app => app._id === user?._id);
+  const isAssigned = task?.status === "in_progress" && task?.assignedTo;
+  const isCompleted = task?.status === "completed";
+
+  if (loading) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground">Loading task details...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!task) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground mb-4">Task not found</div>
+          <Button onClick={() => onNavigate('tasks')}>Back to Tasks</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const petImage = task.pet?.photos?.[0] || task.pet?.type === 'dog' 
+    ? 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=800'
+    : 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=800';
+
+  const rewardDisplay = task.reward || (task.budget ? `$${task.budget}` : '$0');
+  const timeDisplay = task.time || (task.date ? new Date(task.date).toLocaleDateString() : 'Flexible');
+  const typeDisplay = task.type ? task.type.charAt(0).toUpperCase() + task.type.slice(1) : 'Task';
+
+  // Format applicants for ApplicantsDialog
+  const formattedApplicants = task.applicants?.map(app => ({
+    id: app._id,
+    name: app.name,
+    avatar: app.profilePhoto || '',
+    rating: 4.8,
+    reviewCount: 0,
+    location: '',
+    tasksCompleted: 0,
+    responseRate: 100,
+    verified: false,
+    experience: '',
+    certifications: [],
+    introduction: '',
+  })) || [];
+
   return (
     <div className="min-h-screen pt-24 pb-24 px-4">
       <div className="max-w-[1200px] mx-auto">
@@ -30,17 +224,33 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
             {/* Task Header */}
             <Card className="p-6 border-0 shadow-md">
               <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h1 className="text-primary mb-2" style={{ fontWeight: 700, fontSize: '32px' }}>Daily Dog Walking</h1>
-                  <Badge className="bg-primary text-white" style={{ fontWeight: 600 }}>Walk</Badge>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h1 className="text-primary" style={{ fontWeight: 700, fontSize: '32px' }}>{task.title}</h1>
+                    <Badge 
+                      className={`${
+                        task.status === 'open' ? 'bg-green-500' :
+                        task.status === 'in_progress' ? 'bg-blue-500' :
+                        task.status === 'completed' ? 'bg-gray-500' :
+                        'bg-primary'
+                      } text-white`}
+                      style={{ fontWeight: 600 }}
+                    >
+                      {task.status}
+                    </Badge>
+                  </div>
+                  <Badge className="bg-primary text-white" style={{ fontWeight: 600 }}>{typeDisplay}</Badge>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className="hover:bg-primary/10 hover:text-primary transition-all"
-                >
-                  <Heart className="w-5 h-5" />
-                </Button>
+                {isTaskOwner && task.status === "open" && task.applicants && task.applicants.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setApplicantsDialogOpen(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <Users className="w-4 h-4" />
+                    View Applications ({task.applicants.length})
+                  </Button>
+                )}
               </div>
 
               <div className="grid sm:grid-cols-3 gap-4 mb-6">
@@ -50,7 +260,7 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Location</div>
-                    <div style={{ fontWeight: 600 }}>Central Park, NY</div>
+                    <div style={{ fontWeight: 600 }}>{task.location}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -59,7 +269,7 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Time</div>
-                    <div style={{ fontWeight: 600 }}>8-10am</div>
+                    <div style={{ fontWeight: 600 }}>{timeDisplay}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -68,135 +278,144 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Reward</div>
-                    <div className="text-primary" style={{ fontWeight: 700, fontSize: '24px' }}>$25</div>
+                    <div className="text-primary" style={{ fontWeight: 700, fontSize: '24px' }}>{rewardDisplay}</div>
                   </div>
                 </div>
               </div>
 
               <div>
                 <h3 className="mb-3" style={{ fontWeight: 600 }}>Task Description</h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Looking for a reliable and caring person to walk my Golden Retriever, Max, every morning. 
-                  He's a friendly, energetic 3-year-old dog who loves his morning walks around Central Park. 
-                  The walk should be around 30-45 minutes. Max is well-trained and great with other dogs. 
-                  He needs to be walked on a leash at all times and loves to play fetch if time permits.
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {task.description || "No description provided."}
                 </p>
               </div>
             </Card>
 
             {/* Pet Information */}
-            <Card className="p-6 border-0 shadow-md">
-              <h3 className="mb-4" style={{ fontWeight: 600 }}>Pet Information</h3>
-              <div className="flex gap-6">
-                <div className="w-32 h-32 rounded-2xl overflow-hidden shrink-0">
-                  <ImageWithFallback
-                    src="https://images.unsplash.com/photo-1633722715463-d30f4f325e24?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnb2xkZW4lMjByZXRyaWV2ZXJ8ZW58MXx8fHwxNzYwMjk2MjI1fDA&ixlib=rb-4.1.0&q=80&w=1080"
-                    alt="Max"
-                    className="w-full h-full object-cover"
-                  />
+            {task.pet && (
+              <Card className="p-6 border-0 shadow-md">
+                <h3 className="mb-4" style={{ fontWeight: 600 }}>Pet Information</h3>
+                <div className="flex gap-6">
+                  <div className="w-32 h-32 rounded-2xl overflow-hidden shrink-0">
+                    <ImageWithFallback
+                      src={petImage}
+                      alt={task.pet.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-3">
+                    <div>
+                      <h4 style={{ fontWeight: 600 }}>{task.pet.name}</h4>
+                      <p className="text-muted-foreground">
+                        {task.pet.breed || task.pet.type}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1 space-y-3">
-                  <div>
-                    <h4 style={{ fontWeight: 600 }}>Max</h4>
-                    <p className="text-muted-foreground">Golden Retriever</p>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Age:</span>
-                      <span className="ml-2" style={{ fontWeight: 600 }}>3 years</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Weight:</span>
-                      <span className="ml-2" style={{ fontWeight: 600 }}>70 lbs</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Gender:</span>
-                      <span className="ml-2" style={{ fontWeight: 600 }}>Male</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Vaccinated:</span>
-                      <span className="ml-2 text-primary" style={{ fontWeight: 600 }}>Yes</span>
-                    </div>
-                  </div>
-                  <div className="pt-2">
-                    <p className="text-sm text-muted-foreground">
-                      <span style={{ fontWeight: 600 }}>Notes:</span> Very friendly, loves treats, 
-                      knows basic commands (sit, stay, come). No food allergies.
+              </Card>
+            )}
+
+            {/* Assigned Helper Info */}
+            {isAssigned && task.assignedTo && (
+              <Card className="p-6 border-0 shadow-md border-blue-500/20 bg-blue-50/50">
+                <div className="flex items-center gap-4">
+                  <CheckCircle2 className="w-8 h-8 text-blue-500" />
+                  <div className="flex-1">
+                    <h4 className="mb-1" style={{ fontWeight: 600 }}>Assigned Helper</h4>
+                    <p className="text-muted-foreground">
+                      {task.assignedTo.name} has been assigned to this task
                     </p>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Owner Info */}
-            <Card className="p-6 border-0 shadow-md">
-              <div className="flex items-center gap-4 mb-4">
-                <Avatar className="w-16 h-16">
-                  <AvatarImage src="" alt="Sarah M." />
-                  <AvatarFallback className="bg-primary text-white">SM</AvatarFallback>
-                </Avatar>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 style={{ fontWeight: 600 }}>Sarah M.</h4>
-                    <Shield className="w-4 h-4 text-primary" />
+            {task.postedBy && (
+              <Card className="p-6 border-0 shadow-md">
+                <div className="flex items-center gap-4 mb-4">
+                  <Avatar className="w-16 h-16">
+                    <AvatarImage src={task.postedBy.profilePhoto} alt={task.postedBy.name} />
+                    <AvatarFallback className="bg-primary text-white">
+                      {task.postedBy.name.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 style={{ fontWeight: 600 }}>{task.postedBy.name}</h4>
+                      <Shield className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm" style={{ fontWeight: 600 }}>4.9</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                    <span className="text-sm" style={{ fontWeight: 600 }}>4.9</span>
-                    <span className="text-sm text-muted-foreground">(24 reviews)</span>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    className="flex-1 bg-primary hover:bg-primary/90 text-white"
+                    onClick={() => onNavigate('messages', { selectedUserId: task.postedBy?._id })}
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Message
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {/* Apply Card - Show for helpers */}
+            {isHelper() && !isTaskOwner && task.status === "open" && (
+              <Card className="p-6 border-0 shadow-md bg-secondary/20">
+                <h3 className="mb-4" style={{ fontWeight: 600 }}>Apply for this Task</h3>
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-xl">
+                    <div className="text-sm text-muted-foreground mb-1">You'll earn</div>
+                    <div className="text-primary" style={{ fontWeight: 700, fontSize: '36px' }}>{rewardDisplay}</div>
+                    <div className="text-sm text-muted-foreground">per session</div>
                   </div>
+                  <Button 
+                    size="lg" 
+                    className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                    onClick={handleApply}
+                    disabled={applying || hasApplied}
+                  >
+                    {applying ? 'Applying...' : hasApplied ? 'Already Applied' : 'Apply Now'}
+                  </Button>
+                  {hasApplied && (
+                    <p className="text-xs text-center text-primary">
+                      Your application has been submitted
+                    </p>
+                  )}
+                  {!hasApplied && (
+                    <p className="text-xs text-center text-muted-foreground">
+                      You'll be able to chat with the owner after applying
+                    </p>
+                  )}
                 </div>
-              </div>
+              </Card>
+            )}
 
-              <div className="space-y-2 text-sm text-muted-foreground mb-4">
-                <div className="flex justify-between">
-                  <span>Member since</span>
-                  <span style={{ fontWeight: 600 }}>Jan 2023</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Response time</span>
-                  <span style={{ fontWeight: 600 }}>Within 1 hour</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Tasks posted</span>
-                  <span style={{ fontWeight: 600 }}>32</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button 
-                  className="flex-1 bg-primary hover:bg-primary/90 text-white"
-                  onClick={() => onNavigate('messages')}
-                >
-                  <MessageCircle className="w-4 h-4 mr-2" />
-                  Message
-                </Button>
-              </div>
-            </Card>
-
-            {/* Apply Card */}
-            <Card className="p-6 border-0 shadow-md bg-secondary/20">
-              <h3 className="mb-4" style={{ fontWeight: 600 }}>Apply for this Task</h3>
-              <div className="space-y-4">
-                <div className="bg-white p-4 rounded-xl">
-                  <div className="text-sm text-muted-foreground mb-1">You'll earn</div>
-                  <div className="text-primary" style={{ fontWeight: 700, fontSize: '36px' }}>$25</div>
-                  <div className="text-sm text-muted-foreground">per session</div>
-                </div>
-                <Button 
-                  size="lg" 
-                  className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg hover:shadow-xl transition-all hover:scale-105"
-                >
-                  Apply Now
-                </Button>
-                <p className="text-xs text-center text-muted-foreground">
-                  You'll be able to chat with the owner after applying
+            {/* Complete Task Button - Show for owner when in progress */}
+            {isTaskOwner && task.status === "in_progress" && (
+              <Card className="p-6 border-0 shadow-md bg-green-50/50">
+                <h3 className="mb-4" style={{ fontWeight: 600 }}>Task Status</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  This task is in progress. Mark it as completed when the helper finishes.
                 </p>
-              </div>
-            </Card>
+                <Button 
+                  size="lg"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  onClick={handleCompleteTask}
+                  disabled={completing}
+                >
+                  {completing ? 'Completing...' : 'Complete Task'}
+                </Button>
+              </Card>
+            )}
 
             {/* Requirements */}
             <Card className="p-6 border-0 shadow-md">
@@ -204,11 +423,7 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
-                  <span className="text-muted-foreground">Experience with large dogs</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
-                  <span className="text-muted-foreground">Available for regular morning walks</span>
+                  <span className="text-muted-foreground">Experience with pets</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
@@ -216,13 +431,25 @@ export function TaskDetailPage({ onNavigate }: TaskDetailPageProps) {
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
-                  <span className="text-muted-foreground">Must love dogs!</span>
+                  <span className="text-muted-foreground">Must love animals!</span>
                 </li>
               </ul>
             </Card>
           </div>
         </div>
       </div>
+
+      {/* Applicants Dialog */}
+      {isTaskOwner && (
+        <ApplicantsDialog
+          open={applicantsDialogOpen}
+          onOpenChange={setApplicantsDialogOpen}
+          taskTitle={task.title}
+          applicants={formattedApplicants}
+          selectedTask={{ title: task.title, applications: task.applicants?.length || 0 }}
+          onConfirmHelper={(applicantId) => handleAssignHelper(applicantId.toString())}
+        />
+      )}
     </div>
   );
 }

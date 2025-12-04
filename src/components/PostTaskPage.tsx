@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
@@ -7,14 +7,144 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { ArrowLeft, Upload } from "lucide-react";
 import { SuccessToast } from "./SuccessToast";
+import { api } from "../lib/api";
+import { useUser } from "../hooks/useUser";
+import { toast } from "sonner";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface PostTaskPageProps {
   onNavigate: (page: string, params?: Record<string, any>) => void;
 }
 
+interface Pet {
+  _id: string;
+  name: string;
+  type: string;
+  breed?: string;
+  photos?: string[];
+}
+
 export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
   const [step, setStep] = useState(1);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [loadingPets, setLoadingPets] = useState(true);
+  const { isOwner, isAuthenticated } = useUser();
+
+  // Form data
+  const [formData, setFormData] = useState({
+    title: '',
+    type: '',
+    description: '',
+    date: '',
+    time: '',
+    location: '',
+    reward: '',
+    budget: '',
+    pet: '',
+  });
+
+  useEffect(() => {
+    // App.tsx handles route protection, so we can safely assume user is authenticated here
+    // Check if user is owner before loading pets
+    if (isOwner()) {
+      loadPets();
+    }
+  }, []);
+
+  const loadPets = async () => {
+    setLoadingPets(true);
+    try {
+      const response = await api.get<Pet[]>('/pets/my');
+      if (response.success && response.data) {
+        setPets(response.data);
+        if (response.data.length === 0) {
+          toast.error("You need to add a pet first before posting a task");
+          setTimeout(() => onNavigate('profile', { userType: 'owner' }), 2000);
+        }
+      } else {
+        toast.error("Failed to load pets");
+      }
+    } catch (error) {
+      toast.error("Failed to load pets");
+    } finally {
+      setLoadingPets(false);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!formData.title || !formData.type || !formData.location || !formData.pet) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (!formData.reward && !formData.budget) {
+      toast.error("Please enter a reward amount");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const taskData = {
+        title: formData.title,
+        type: formData.type,
+        description: formData.description || '',
+        location: formData.location,
+        reward: formData.reward || `$${formData.budget}`,
+        budget: formData.budget ? Number(formData.budget) : Number(formData.reward?.replace('$', '') || 0),
+        pet: formData.pet,
+        date: formData.date || new Date().toISOString(),
+        time: formData.time || '',
+      };
+
+      const response = await api.post('/tasks', taskData);
+      
+      if (response.success) {
+        setShowSuccess(true);
+        setTimeout(() => {
+          onNavigate('tasks');
+        }, 2000);
+      } else {
+        toast.error(response.message || "Failed to create task");
+      }
+    } catch (error) {
+      toast.error("Failed to create task");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectedPet = pets.find(p => p._id === formData.pet);
+  const typeDisplay = formData.type ? formData.type.charAt(0).toUpperCase() + formData.type.slice(1) : '';
+
+  if (loadingPets) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-muted-foreground">Loading your pets...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (pets.length === 0) {
+    return (
+      <div className="min-h-screen pt-24 pb-24 px-4 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="text-muted-foreground mb-4">You need to add a pet first before posting a task.</div>
+          <Button onClick={() => onNavigate('profile', { userType: 'owner' })}>
+            Go to Profile
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pt-24 pb-24 px-4">
@@ -70,17 +200,20 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
               <h2 className="text-primary" style={{ fontWeight: 600, fontSize: '24px' }}>Task Details</h2>
               
               <div className="space-y-2">
-                <Label htmlFor="title">Task Title</Label>
+                <Label htmlFor="title">Task Title *</Label>
                 <Input 
                   id="title"
                   placeholder="e.g., Daily Morning Dog Walk"
                   className="bg-white"
+                  value={formData.title}
+                  onChange={(e) => handleInputChange('title', e.target.value)}
+                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="type">Service Type</Label>
-                <Select>
+                <Label htmlFor="type">Service Type *</Label>
+                <Select value={formData.type} onValueChange={(value) => handleInputChange('type', value)}>
                   <SelectTrigger className="bg-white">
                     <SelectValue placeholder="Select service type" />
                   </SelectTrigger>
@@ -101,6 +234,8 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                   placeholder="Describe what you need help with..."
                   rows={5}
                   className="bg-white resize-none"
+                  value={formData.description}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
                 />
               </div>
 
@@ -111,6 +246,8 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                     id="date"
                     type="date"
                     className="bg-white"
+                    value={formData.date}
+                    onChange={(e) => handleInputChange('date', e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -119,13 +256,21 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                     id="time"
                     type="time"
                     className="bg-white"
+                    value={formData.time}
+                    onChange={(e) => handleInputChange('time', e.target.value)}
                   />
                 </div>
               </div>
 
               <Button 
                 className="w-full bg-primary hover:bg-primary/90 text-white"
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  if (!formData.title || !formData.type) {
+                    toast.error("Please fill in required fields");
+                    return;
+                  }
+                  setStep(2);
+                }}
               >
                 Continue
               </Button>
@@ -134,95 +279,45 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
 
           {step === 2 && (
             <div className="space-y-6">
-              <h2 className="text-primary" style={{ fontWeight: 600, fontSize: '24px' }}>Pet Information</h2>
+              <h2 className="text-primary" style={{ fontWeight: 600, fontSize: '24px' }}>Select Pet</h2>
               
               <div className="space-y-2">
-                <Label htmlFor="petName">Pet Name</Label>
-                <Input 
-                  id="petName"
-                  placeholder="e.g., Max"
-                  className="bg-white"
-                />
+                <Label htmlFor="pet">Select a Pet *</Label>
+                <Select value={formData.pet} onValueChange={(value) => handleInputChange('pet', value)}>
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Select your pet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pets.map((pet) => (
+                      <SelectItem key={pet._id} value={pet._id}>
+                        {pet.name} ({pet.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="species">Species</Label>
-                  <Select>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Select species" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dog">Dog</SelectItem>
-                      <SelectItem value="cat">Cat</SelectItem>
-                      <SelectItem value="bird">Bird</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="breed">Breed</Label>
-                  <Input 
-                    id="breed"
-                    placeholder="e.g., Golden Retriever"
-                    className="bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="age">Age</Label>
-                  <Input 
-                    id="age"
-                    placeholder="e.g., 3 years"
-                    className="bg-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="weight">Weight</Label>
-                  <Input 
-                    id="weight"
-                    placeholder="e.g., 70 lbs"
-                    className="bg-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gender">Gender</Label>
-                  <Select>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Special Notes</Label>
-                <Textarea 
-                  id="notes"
-                  placeholder="Any special requirements, allergies, or behavioral notes..."
-                  rows={4}
-                  className="bg-white resize-none"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Pet Photos</Label>
-                <div className="border-2 border-dashed border-border rounded-xl p-8 text-center bg-white cursor-pointer hover:border-primary transition-colors">
-                  <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Click to upload or drag and drop
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    PNG, JPG up to 10MB
-                  </p>
-                </div>
-              </div>
+              {selectedPet && (
+                <Card className="p-4 bg-secondary/20">
+                  <div className="flex gap-4">
+                    {selectedPet.photos && selectedPet.photos.length > 0 && (
+                      <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0">
+                        <ImageWithFallback
+                          src={selectedPet.photos[0]}
+                          alt={selectedPet.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <h4 style={{ fontWeight: 600 }}>{selectedPet.name}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedPet.breed || selectedPet.type}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              )}
 
               <div className="flex gap-3">
                 <Button 
@@ -234,7 +329,13 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                 </Button>
                 <Button 
                   className="flex-1 bg-primary hover:bg-primary/90 text-white"
-                  onClick={() => setStep(3)}
+                  onClick={() => {
+                    if (!formData.pet) {
+                      toast.error("Please select a pet");
+                      return;
+                    }
+                    setStep(3);
+                  }}
                 >
                   Continue
                 </Button>
@@ -247,11 +348,14 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
               <h2 className="text-primary" style={{ fontWeight: 600, fontSize: '24px' }}>Location & Payment</h2>
               
               <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
+                <Label htmlFor="location">Location *</Label>
                 <Input 
                   id="location"
                   placeholder="e.g., Central Park, New York, NY"
                   className="bg-white"
+                  value={formData.location}
+                  onChange={(e) => handleInputChange('location', e.target.value)}
+                  required
                 />
                 <p className="text-xs text-muted-foreground">
                   Enter the address or area where the service is needed
@@ -259,15 +363,26 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reward">Reward Amount ($)</Label>
+                <Label htmlFor="reward">Reward Amount *</Label>
                 <Input 
                   id="reward"
-                  type="number"
-                  placeholder="25"
+                  type="text"
+                  placeholder="e.g., $25 or 25"
                   className="bg-white"
+                  value={formData.reward}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    handleInputChange('reward', value);
+                    // Also set budget if it's a number
+                    const numValue = value.replace('$', '');
+                    if (!isNaN(Number(numValue)) && numValue) {
+                      handleInputChange('budget', numValue);
+                    }
+                  }}
+                  required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Set a fair price for the service
+                  Set a fair price for the service (e.g., $25)
                 </p>
               </div>
 
@@ -276,19 +391,23 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Task Type</span>
-                    <span style={{ fontWeight: 600 }}>Dog Walking</span>
+                    <span style={{ fontWeight: 600 }}>{typeDisplay || 'Not set'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Pet</span>
-                    <span style={{ fontWeight: 600 }}>Max (Golden Retriever)</span>
+                    <span style={{ fontWeight: 600 }}>
+                      {selectedPet ? `${selectedPet.name} (${selectedPet.type})` : 'Not selected'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Location</span>
-                    <span style={{ fontWeight: 600 }}>Central Park, NY</span>
+                    <span style={{ fontWeight: 600 }}>{formData.location || 'Not set'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Reward</span>
-                    <span className="text-primary" style={{ fontWeight: 700 }}>$25</span>
+                    <span className="text-primary" style={{ fontWeight: 700 }}>
+                      {formData.reward || formData.budget ? (formData.reward || `$${formData.budget}`) : 'Not set'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -303,12 +422,10 @@ export function PostTaskPage({ onNavigate }: PostTaskPageProps) {
                 </Button>
                 <Button 
                   className="flex-1 bg-primary hover:bg-primary/90 text-white shadow-lg hover:shadow-xl transition-all hover:scale-105"
-                  onClick={() => {
-                    setShowSuccess(true);
-                    setTimeout(() => onNavigate('tasks'), 2000);
-                  }}
+                  onClick={handleSubmit}
+                  disabled={loading}
                 >
-                  Post Task
+                  {loading ? 'Posting...' : 'Post Task'}
                 </Button>
               </div>
             </div>

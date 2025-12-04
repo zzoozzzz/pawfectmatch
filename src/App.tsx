@@ -8,12 +8,27 @@ import { PostTaskPage } from "./components/PostTaskPage";
 import { MessagesPage } from "./components/MessagesPage";
 import { ProfilePage } from "./components/ProfilePage";
 import { AuthPage } from "./components/AuthPage";
-import { Toaster } from "sonner@2.0.3";
+import { Toaster } from "sonner";
+import { useUser } from "./hooks/useUser";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState("landing");
   const [navigationParams, setNavigationParams] = useState<Record<string, any>>({});
   const scrollPositions = useRef<Record<string, number>>({});
+  const { isAuthenticated, loading: userLoading } = useUser();
+
+  // Protected routes that require authentication
+  const protectedRoutes = [
+    'tasks',
+    'task-detail',
+    'find-helpers',
+    'post-task',
+    'profile',
+    'messages'
+  ];
+  
+  // Check if current route requires authentication
+  const requiresAuth = protectedRoutes.includes(currentPage);
 
   const handleNavigate = (page: string, params?: Record<string, any>) => {
     // Save current scroll position before navigating
@@ -35,6 +50,15 @@ export default function App() {
       .catch(err => console.error("❌ Connection failed:", err));
   }, []);
 
+  // Route protection - only runs after loading completes
+  useEffect(() => {
+    if (userLoading) return;
+
+    if (requiresAuth && !isAuthenticated) {
+      setCurrentPage("auth");
+    }
+  }, [userLoading, isAuthenticated, requiresAuth]);
+
   const renderPage = () => {
     switch (currentPage) {
       case "landing":
@@ -44,7 +68,7 @@ export default function App() {
       case "find-helpers":
         return <FindHelpersPage onNavigate={handleNavigate} />;
       case "task-detail":
-        return <TaskDetailPage onNavigate={handleNavigate} />;
+        return <TaskDetailPage onNavigate={handleNavigate} taskId={navigationParams.taskId} />;
       case "post-task":
         return <PostTaskPage onNavigate={handleNavigate} />;
       case "messages":

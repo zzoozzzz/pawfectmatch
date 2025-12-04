@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -7,60 +7,158 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { Upload, X } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
+import { api } from "../lib/api";
 
-interface Pet {
-  id?: number;
+// Backend Pet interface
+interface BackendPet {
+  _id?: string;
   name: string;
   type: string;
-  breed: string;
-  age: string;
-  height: string;
-  weight: string;
-  temperament: string;
-  image: string;
+  breed?: string;
+  height?: number;
+  weight?: number;
+  temperament?: string;
+  photos?: string[];
+  owner?: string;
 }
 
 interface PetFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  pet?: Pet | null;
-  onSave: (pet: Pet) => void;
+  pet?: BackendPet | null;
+  onSave: (pet: BackendPet) => void;
 }
 
 export function PetFormDialog({ open, onOpenChange, pet, onSave }: PetFormDialogProps) {
-  const [formData, setFormData] = useState<Pet>(
-    pet || {
-      name: "",
-      type: "dog",
-      breed: "",
-      age: "",
-      height: "",
-      weight: "",
-      temperament: "",
-      image: "",
-    }
-  );
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "dog",
+    breed: "",
+    height: "",
+    weight: "",
+    temperament: "",
+    image: "",
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Reset form when dialog opens/closes or pet changes
+  useEffect(() => {
+    if (open) {
+      if (pet) {
+        // Editing existing pet - populate form
+        setFormData({
+          name: pet.name || "",
+          type: pet.type || "dog",
+          breed: pet.breed || "",
+          height: pet.height?.toString() || "",
+          weight: pet.weight?.toString() || "",
+          temperament: pet.temperament || "",
+          image: pet.photos?.[0] || "",
+        });
+      } else {
+        // Creating new pet - reset form
+        setFormData({
+          name: "",
+          type: "dog",
+          breed: "",
+          height: "",
+          weight: "",
+          temperament: "",
+          image: "",
+        });
+      }
+    }
+  }, [open, pet]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
-    toast.success(pet ? "Pet updated successfully!" : "Pet added successfully!");
-    onOpenChange(false);
+    
+    // Validation
+    if (!formData.name || !formData.type) {
+      toast.error("Name and type are required");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Prepare data for backend (matches Pet model schema)
+      const petData: any = {
+        name: formData.name.trim(),
+        type: formData.type,
+        breed: formData.breed?.trim() || undefined,
+        temperament: formData.temperament?.trim() || undefined,
+        photos: formData.image ? [formData.image] : [],
+      };
+
+      // Convert height and weight to numbers if provided
+      if (formData.height) {
+        const heightNum = parseFloat(formData.height);
+        if (!isNaN(heightNum)) {
+          petData.height = heightNum;
+        }
+      }
+      if (formData.weight) {
+        const weightNum = parseFloat(formData.weight);
+        if (!isNaN(weightNum)) {
+          petData.weight = weightNum;
+        }
+      }
+
+      let savedPet: BackendPet;
+
+      if (pet?._id) {
+        // Update existing pet
+        const response = await api.put<BackendPet>(`/pets/${pet._id}`, petData);
+        
+        if (response.success && response.data) {
+          savedPet = response.data;
+          toast.success("Pet updated successfully!");
+        } else {
+          toast.error(response.message || "Failed to update pet");
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Create new pet
+        const response = await api.post<BackendPet>("/pets", petData);
+        
+        if (response.success && response.data) {
+          savedPet = response.data;
+          toast.success("Pet added successfully!");
+        } else {
+          toast.error(response.message || "Failed to create pet");
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Call onSave with the saved pet object from backend
+      onSave(savedPet);
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Error saving pet:", error);
+      toast.error("An error occurred while saving the pet");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImageUpload = () => {
-    // Simulated image upload
-    toast.info("Image upload feature would be implemented here");
+    // For now, just allow pasting URL
+    const url = prompt("Enter image URL:");
+    if (url) {
+      setFormData({ ...formData, image: url });
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{pet ? "Edit Pet" : "Add New Pet"}</DialogTitle>
+          <DialogTitle>{pet?._id ? "Edit Pet" : "Add New Pet"}</DialogTitle>
           <DialogDescription>
-            {pet ? "Update your pet's information" : "Add a new pet to your profile"}
+            {pet?._id ? "Update your pet's information" : "Add a new pet to your profile"}
           </DialogDescription>
         </DialogHeader>
 
@@ -105,6 +203,7 @@ export function PetFormDialog({ open, onOpenChange, pet, onSave }: PetFormDialog
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g., Max"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -114,6 +213,7 @@ export function PetFormDialog({ open, onOpenChange, pet, onSave }: PetFormDialog
               <Select
                 value={formData.type}
                 onValueChange={(value) => setFormData({ ...formData, type: value })}
+                disabled={loading}
               >
                 <SelectTrigger id="type">
                   <SelectValue />
@@ -130,46 +230,39 @@ export function PetFormDialog({ open, onOpenChange, pet, onSave }: PetFormDialog
 
             {/* Breed */}
             <div className="space-y-2">
-              <Label htmlFor="breed">Breed *</Label>
+              <Label htmlFor="breed">Breed</Label>
               <Input
                 id="breed"
                 value={formData.breed}
                 onChange={(e) => setFormData({ ...formData, breed: e.target.value })}
                 placeholder="e.g., Golden Retriever"
-                required
-              />
-            </div>
-
-            {/* Age */}
-            <div className="space-y-2">
-              <Label htmlFor="age">Age</Label>
-              <Input
-                id="age"
-                value={formData.age}
-                onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                placeholder="e.g., 3 years"
+                disabled={loading}
               />
             </div>
 
             {/* Height */}
             <div className="space-y-2">
-              <Label htmlFor="height">Height</Label>
+              <Label htmlFor="height">Height (inches)</Label>
               <Input
                 id="height"
+                type="number"
                 value={formData.height}
                 onChange={(e) => setFormData({ ...formData, height: e.target.value })}
-                placeholder="e.g., 24 inches"
+                placeholder="e.g., 24"
+                disabled={loading}
               />
             </div>
 
             {/* Weight */}
             <div className="space-y-2">
-              <Label htmlFor="weight">Weight</Label>
+              <Label htmlFor="weight">Weight (lbs)</Label>
               <Input
                 id="weight"
+                type="number"
                 value={formData.weight}
                 onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                placeholder="e.g., 65 lbs"
+                placeholder="e.g., 65"
+                disabled={loading}
               />
             </div>
           </div>
@@ -183,15 +276,21 @@ export function PetFormDialog({ open, onOpenChange, pet, onSave }: PetFormDialog
               onChange={(e) => setFormData({ ...formData, temperament: e.target.value })}
               placeholder="Describe your pet's personality, behavior, and any special needs..."
               rows={4}
+              disabled={loading}
             />
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+            >
               Cancel
             </Button>
-            <Button type="submit">
-              {pet ? "Save Changes" : "Add Pet"}
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : pet?._id ? "Save Changes" : "Add Pet"}
             </Button>
           </DialogFooter>
         </form>
