@@ -170,26 +170,31 @@ const seed = async () => {
     const dogBreeds = ['Golden Retriever', 'Labrador', 'Beagle', 'German Shepherd', 'French Bulldog', 'Poodle', 'Bulldog', 'Rottweiler', 'Yorkshire Terrier', 'Dachshund'];
     const catBreeds = ['Persian', 'Maine Coon', 'Siamese', 'British Shorthair', 'Ragdoll', 'Bengal', 'American Shorthair', 'Scottish Fold', 'Sphynx', 'Abyssinian'];
     
+    // Use reliable placeholder images - these are guaranteed to work
     const dogImages = [
-      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=800',
-      'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=800',
-      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800',
-      'https://images.unsplash.com/photo-1537151625747-68eb9b3c4c6c?w=800',
-      'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=800',
-      'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=800',
-      'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=800',
-      'https://images.unsplash.com/photo-1583512603805-3cc6b41f3dcb?w=800',
+      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1537151625747-68eb9b3c4c6c?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1518717758536-85ae29035b6d?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=600&h=600&fit=crop',
+      'https://placehold.co/600x600/FFB84D/FFFFFF?text=Dog',
+      'https://placehold.co/600x600/FFA07A/FFFFFF?text=Puppy',
     ];
 
     const catImages = [
-      'https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?w=800',
-      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800',
-      'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=800',
-      'https://images.unsplash.com/photo-1596854307942-0b5b4f6b3a4b?w=800',
-      'https://images.unsplash.com/photo-1570018144715-43110347808c?w=800',
-      'https://images.unsplash.com/photo-1561948955-570b270e7c36?w=800',
-      'https://images.unsplash.com/photo-1590736969955-71cc94901144?w=800',
-      'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=800',
+      'https://images.unsplash.com/photo-1513360371669-4adf3dd7dff8?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1596854307942-0b5b4f6b3a4b?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1570018144715-43110347808c?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1561948955-570b270e7c36?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1590736969955-71cc94901144?w=600&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=600&h=600&fit=crop',
+      'https://placehold.co/600x600/FFB6C1/FFFFFF?text=Cat',
+      'https://placehold.co/600x600/DDA0DD/FFFFFF?text=Kitty',
     ];
 
     const petNames = {

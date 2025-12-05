@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Star, MapPin, Clock, DollarSign, Leaf, Sparkles } from "lucide-react";
@@ -6,43 +6,56 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { HowItWorks } from "./HowItWorks";
 import { OnboardingModal } from "./OnboardingModal";
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "./ui/carousel";
+import { api } from "../lib/api";
 
 interface LandingPageProps {
   onNavigate: (page: string, params?: Record<string, any>) => void;
 }
 
+interface Task {
+  _id: string;
+  title: string;
+  type: string;
+  location: string;
+  reward?: string;
+  budget?: number;
+  time?: string;
+  date?: string;
+  pet?: {
+    _id: string;
+    name: string;
+    type: string;
+    photos?: string[];
+  };
+  status: string;
+}
+
 export function LandingPage({ onNavigate }: LandingPageProps) {
   const [showOnboarding, setShowOnboarding] = useState(false);
-  
-  const featuredTasks = [
-    {
-      id: 1,
-      title: "Daily Dog Walking",
-      image: "https://placehold.co/600x400?text=No+Pet+Photo",
-      location: "Central Park, NY",
-      time: "Morning (8-10am)",
-      reward: "$25",
-      rating: 4.9,
-    },
-    {
-      id: 2,
-      title: "Cat Feeding & Play",
-      image: "https://placehold.co/600x400?text=No+Pet+Photo",
-      location: "Brooklyn Heights",
-      time: "Evening (6-8pm)",
-      reward: "$20",
-      rating: 5.0,
-    },
-    {
-      id: 3,
-      title: "Weekend Pet Sitting",
-      image: "https://placehold.co/600x400?text=No+Pet+Photo",
-      location: "Manhattan, NY",
-      time: "Sat-Sun (Full Day)",
-      reward: "$120",
-      rating: 4.8,
-    },
-  ];
+  const [featuredTasks, setFeaturedTasks] = useState<Task[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+
+  useEffect(() => {
+    loadFeaturedTasks();
+  }, []);
+
+  const loadFeaturedTasks = async () => {
+    setLoadingTasks(true);
+    try {
+      const response = await api.get<Task[]>("/tasks");
+      if (response.success && response.data) {
+        // Filter for open tasks only and take first 3
+        const openTasks = response.data
+          .filter(task => task.status === 'open')
+          .slice(0, 3);
+        setFeaturedTasks(openTasks);
+      }
+    } catch (error) {
+      console.error('Failed to load featured tasks:', error);
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -134,46 +147,62 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {featuredTasks.map((task, index) => (
-              <Card 
-                key={task.id}
-                className="group overflow-hidden hover:shadow-2xl transition-all cursor-pointer border-0 shadow-md hover:-translate-y-2 duration-300"
-                onClick={() => onNavigate('task-detail')}
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                <div className="aspect-square relative overflow-hidden">
-                  <ImageWithFallback
-                    src={task.image}
-                    alt={task.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1 shadow-md">
-                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                    <span className="text-sm" style={{ fontWeight: 600 }}>{task.rating}</span>
-                  </div>
-                </div>
-                <div className="p-5 space-y-3 bg-white">
-                  <h3 style={{ fontWeight: 600 }} className="group-hover:text-primary transition-colors">{task.title}</h3>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-primary" />
-                      {task.location}
+          {loadingTasks ? (
+            <div className="text-center py-12">
+              <div className="text-muted-foreground">Loading popular tasks...</div>
+            </div>
+          ) : featuredTasks.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-muted-foreground">No popular tasks available at the moment.</div>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-6">
+              {featuredTasks.map((task, index) => {
+                const imageUrl = task?.pet?.photos?.[0] ?? "https://placehold.co/600x400?text=No+Pet+Photo";
+                const rewardDisplay = task.reward || (task.budget ? `$${task.budget}` : '$0');
+                const timeDisplay = task.time || (task.date ? new Date(task.date).toLocaleDateString() : 'Flexible');
+                
+                return (
+                  <Card 
+                    key={task._id}
+                    className="group overflow-hidden hover:shadow-2xl transition-all cursor-pointer border-0 shadow-md hover:-translate-y-2 duration-300"
+                    onClick={() => onNavigate('task-detail', { taskId: task._id })}
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <div className="aspect-square relative overflow-hidden">
+                      <ImageWithFallback
+                        src={imageUrl}
+                        alt={task.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1 shadow-md">
+                        <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                        <span className="text-sm" style={{ fontWeight: 600 }}>4.8</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-primary" />
-                      {task.time}
+                    <div className="p-5 space-y-3 bg-white">
+                      <h3 style={{ fontWeight: 600 }} className="group-hover:text-primary transition-colors">{task.title}</h3>
+                      <div className="space-y-2 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-primary" />
+                          {task.location}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-primary" />
+                          {timeDisplay}
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-border">
+                          <span className="text-primary" style={{ fontWeight: 700, fontSize: '18px' }}>{rewardDisplay}</span>
+                          <div className="text-xs text-muted-foreground">per task</div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-border">
-                      <span className="text-primary" style={{ fontWeight: 700, fontSize: '18px' }}>{task.reward}</span>
-                      <div className="text-xs text-muted-foreground">per task</div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
 
           <div className="text-center mt-12">
             <Button 
